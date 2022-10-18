@@ -7,9 +7,9 @@ import random
 
 columns = ['age', 'workclass', 'fnlwgt', 'education', 'educationNum', 'maritalStatus', 'occupation', 'relationship', 'race', 'sex',
            'capitalGain', 'capitalLoss', 'hoursPerWeek', 'nativeCountry', 'income']
-df_train_set = pd.read_csv('./adult.data', names=columns)
+df_train_set = pd.read_csv('adult.data', names=columns)
 df_test_set = pd.read_csv(
-    './adult.test', names=columns, skiprows=1)  # 第一行是非法数据
+    'adult.test', names=columns, skiprows=1)  # 第一行是非法数据
 
 # print(df_train_set.head())
 # print(df_test_set.head())
@@ -20,12 +20,19 @@ df_train_set = pd.read_csv('./train_adult.csv')
 
 # fnlwgt列用处不大，educationNum与education类似
 df_train_set.drop(['fnlwgt', 'educationNum'], axis=1, inplace=True)
+df_test_set.drop(['fnlwgt', 'educationNum'], axis=1, inplace=True)
 
 df_train_set.drop_duplicates(inplace=True)  # 去除重复行
+df_test_set.drop_duplicates(inplace=True)  # 去除重复行
 
 df_train_set[df_train_set.isna().values == True]  # 输出有缺失值的数据行
+df_test_set[df_test_set.isna().values == True]  # 输出有缺失值的数据行
 
 df_train_set.dropna(inplace=True)  # 去除空行
+df_test_set.dropna(inplace=True)  # 去除空行
+
+df_train_set[df_train_set['workclass'].str.contains(
+    r'\?', regex=True)]  # 查找异常值, 避免与正则表达式的?冲突需要转义
 
 df_train_set[df_train_set['workclass'].str.contains(
     r'\?', regex=True)]  # 查找异常值, 避免与正则表达式的?冲突需要转义
@@ -110,7 +117,7 @@ df_train_set['nativeCountry'] = df_train_set['nativeCountry'].map(
 income_mapping = {' <=50K': 0, ' >50K': 1}
 df_train_set['income'] = df_train_set['income'].map(income_mapping)
 
-df_train_set.to_csv('./after_train_adult.csv', index=False)
+df_train_set.to_csv('after_train_adult.csv', index=False)
 
 class TreeNode():#二叉树节点
     def __init__(self,val,lchild=None,rchild=None):
@@ -133,7 +140,7 @@ def calc_gini(df):
     for i in df['income']:
         if i == 0:
             count += 1
-    p = count / df.index.stop
+    p = count / df.shape[0]
     return 1 - p ** 2 - (1-p) ** 2
     
     
@@ -174,48 +181,59 @@ def choose_best_feature_to_split(df):
     best_gini = INFINITY
     column_name = list(df)
     res = 0
-    for i in range(df.shape[1]):
+    for i in range(df.shape[1]-1):
         index = column_name[i]
-        for j in range(get_feature_num(df, index)):
-            df_after = split_dataset(df, index, j)
+        if len(df[index].value_counts().index) == 1:
+            continue
+        for key in df[index].value_counts().index:
+            df_after = split_dataset(df, i, key)
             df_after_comp = get_complete_dataset(df, df_after)
             res = df_after.shape[0] / df.shape[0] * calc_gini(df_after) + df_after_comp.shape[0] / df.shape[0] * calc_gini(df_after_comp)
             if res < best_gini:
-                best_value, best_df_l, best_df_r, best_gini = (index, j), df_after, df_after_comp, res
+                best_value, best_df_l, best_df_r, best_gini = (index, key), df_after, df_after_comp, res
     return best_value, best_df_l, best_df_r, best_gini
         
-def is_same_gini(df, columns):
+def is_same_gini(df):
     """
     判断数据集以某特征分裂的基尼指数是否相同
     :param columns: 数据集
     :return: True or False
     """
-    list = set()
-    for i in range(len(columns)):
-        for j in range(get_feature_num(columns, i)):
-            df_after = split_dataset(df, i, j)
+    l_set = set()
+    l_df = list(df)
+    for i in range(df.shape[1]):
+        feature = l_df[i]
+        if len(df[feature].value_counts().index) == 1:
+            continue
+        for key in df[feature].value_counts().index:
+            df_after = split_dataset(df, i, key)
             df_after_comp = get_complete_dataset(df, df_after)
             res = df_after.shape[0] / df.shape[0] * calc_gini(df_after) + df_after_comp.shape[0] / df.shape[0] * calc_gini(df_after_comp)
-            list.add(res)
-    if len(list) == 1:
+            l_set.add(res)
+    if len(l_set) == 1:
         return True
     else:
         return False
 
-def getMostCa(df):
+def getLabel(df):
     """
     返回数据集中出现次数最多的类别
     :param df: 数据集
     :return: 类别
     """
     
-    column_name = list(df)
-    ca = (column_name[0], 0)
-    for i in range(df.shape[1]):
-        for key, value in df[column_name[i]].value_counts().items():
-            if value > ca[1]:
-                ca = (column_name[i], key)
-    return ca
+    for key, value in df['income'].value_counts(sort=True).items():
+        return ('income', key)
+
+def rm_column(columns, feature, value):
+    columns0 = columns.copy()
+    for (i, j) in enumerate(columns0):
+        if j[0] == feature:
+            index = i
+            columns0[index][1] = list(filter(lambda x: x != value, columns0[index][1]))
+            if columns0[index][1] == []:
+                del columns0[index]
+    return columns0
 
 def build_decision_tree(df, columns, flags):
     """
@@ -225,17 +243,12 @@ def build_decision_tree(df, columns, flags):
     :param flags: 区分特征是否被完全区分开,初始为全0, 若某个特征被区分开那么flags对应的下标为0
     :return: CART树
     """
-    for i in range(len(flags)):
-        node = TreeNode(df, None, None)
-        index = get_feature_num(columns, i)
-        if index == 1:
-            flags[i] = 0
-            node.label = columns[i]
-            return node
-        else:
-            flags[i] = 1
-    if len(columns) == 0 or is_same_gini(df, columns):
-        node.label = getMostCa(df)
+    node = TreeNode(df, None, None)
+    if len(df['income'].value_counts().index) == 1:
+        node.label = ('income', df.iloc[0][-1])
+        return node
+    if len(columns) == 0 or is_same_gini(df):
+        node.label = getLabel(df)
         return node
     best_value, best_df_l, best_df_r, best_gini = choose_best_feature_to_split(df)
 
@@ -248,19 +261,23 @@ def build_decision_tree(df, columns, flags):
             columns0[index][1] = list(filter(lambda x: x != value, columns0[index][1]))
             if columns0[index][1] == []:
                 del columns0[index]
+            break
     lchild = TreeNode(best_df_l, None, None)
-    node.left = lchild
+    node.lchild = lchild
     if best_df_l.shape[0] == 0:
-        lchild.label = getMostCa(df)
+        lchild.label = getLabel(df)
+        return node
     else:
-        lchild = build_decision_tree(best_df_l, columns0, flags)
+        node.lchild = build_decision_tree(best_df_l, columns0, flags)
     
     rchild = TreeNode(best_df_r, None, None)
-    node.right = rchild
+    node.rchild = rchild
     if best_df_r.shape[0] == 0:
-        rchild.label = getMostCa(df)
+        rchild.label = getLabel(df)
+        return node
     else:
-        rchild = build_decision_tree(best_df_r, columns0, flags)
+        node.rchild = build_decision_tree(best_df_r, columns0, flags)
+    return node
 
     # 递归结束情况1: 若当前集合的所有样本标签相等,即样本已被分"纯",则可以返回该标签值作为一个叶子节点
     # 递归结束情况2: 若当前训练集的所有特征都被使用完毕,当前无可用特征但样本仍未分"纯"，则返回样本最多的标签作为结果
@@ -284,15 +301,16 @@ def load_decision_tree():
     cart = np.load('cart.npy', allow_pickle=True)
     return cart.item()
 
+
 df_train = df_train_set.copy() #防止预处理重新来
 
 columns = df_train.columns.to_list()
-flags = [0 for i in range(len(columns))]
+flags = [0 for i in range(len(columns)-1)]
 
 # df_train.head()
 # print(flags)
 # [(a1, [v1]),(a1, [v2, v3, ...]),...]
-columns_proc = [[x, l] for x in columns for l in df_train[x].unique()]
+columns_proc = [[x, list(df_train[x].unique())] for x in columns if x != 'income']
 
 cart = build_decision_tree(df_train, columns_proc, flags)
 save_decision_tree(cart)
@@ -305,20 +323,16 @@ def classify(cart, df_row, columns):
     :param columns: 特征列表
     :return: 预测结果
     """
+    if cart.lchild is None and cart.rchild is None:
+        return cart.label[1]
     feature = cart.label[0]
     value = cart.label[1]
     featIndex = columns.index(feature)
     key = df_row[featIndex]
     if value == key:
-        if cart.left is None:
-            return cart.label[1]
-        else:
-            return classify(cart.left, df_row, columns)
+        return classify(cart.lchild, df_row, columns)
     else:
-        if cart.right is None:
-            return cart.label[1]
-        else:
-            return classify(cart.right, df_row, columns)
+        return classify(cart.rchild, df_row, columns)
 
 
 def predict(cart, df, columns):
@@ -351,7 +365,8 @@ def calc_acc(pred_list, test_list):
 
 
 columns = df_train.columns.to_list()
-cart = load_decision_tree() # 加载模型
+# cart = load_decision_tree() # 加载模型
 test_list = df_train['income'].to_numpy()
 pred_list = predict(cart, df_train, columns)
 acc = calc_acc(pred_list, test_list)
+print(acc)
