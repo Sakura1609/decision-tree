@@ -87,8 +87,8 @@ discrete_column = ['workclass', 'education', 'maritalStatus',
 # df_train_set['sex'].value_counts().keys()
 # df_train_set['nativeCountry'].value_counts().keys()
 # df_train_set['income'].value_counts().keys()
-workclass_mapping = {' Private': 0, ' Self-emp-not-inc': 1, ' Self-emp-inc': 1, ' Local-gov': 2,
-                     ' State-gov': 2, ' Federal-gov': 2, ' Without-pay': 3, ' Never-worked': 3}
+workclass_mapping = {' Private': 0, ' Self-emp-not-inc': 1, ' Self-emp-inc': 2, ' Local-gov': 3,
+                     ' State-gov': 4, ' Federal-gov': 5, ' Without-pay': 6, ' Never-worked': 7}
 df_train_set['workclass'] = df_train_set['workclass'].map(workclass_mapping)
 df_test_set['workclass'] = df_test_set['workclass'].map(workclass_mapping)
 
@@ -454,7 +454,7 @@ flags = [1 for i in range(len(columns)-1)]
 
 cart = load_decision_tree() # 加载模型
 test_list = df_test['income'].to_numpy()
-# cart = prune(cart, df_test, columns)
+cart = prune(cart, df_test, columns)
 pred_list = predict(cart, df_test, columns)
 acc = calc_acc(pred_list, test_list)
 print(acc)
